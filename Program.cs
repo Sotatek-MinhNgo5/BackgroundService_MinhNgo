@@ -1,38 +1,79 @@
-﻿using BackgroundServices;
-using BackgroundServices.Channels;
+﻿using Microsoft.EntityFrameworkCore;
+using BackgroundServices.Data;
 using BackgroundServices.Models;
 using BackgroundServices.Services;
-using BackgroundServices.Workers;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<EmailChannel>();
-builder.Services.AddScoped<IEmailSender, FakeEmailSender>();
-builder.Services.AddHostedService<EmailBackgroundService>();
+// DB
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<AppDb>(opt => opt.UseSqlServer(connectionString));
 
+// RabbitMQ
+builder.Services.AddSingleton<IRabbitMqService, RabbitMqService>();
+
+// Worker
+//builder.Services.AddHostedService<EmailWorker>();
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
-app.MapPost("/order", async (OrderRequest order, EmailChannel channel) =>
+if (app.Environment.IsDevelopment())
 {
-    var message = new EmailMessage
-    {
-        To = order.CustomerEmail,
-        Subject = "Order Confirmation",
-        Body = $"Your order {order.OrderId} has been received!"
-    };
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-    await channel.Writer.WriteAsync(message);
 
-    return Results.Ok(new
-    {
-        message = "Order received! Email will be sent shortly.",
-        orderId = order.OrderId
-    });
-});
+app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+    await Task.Delay(3000);           
+    db.Database.EnsureCreated();     
+    Console.WriteLine("Database ready!");
+}
+
+//app.MapPost("/campaign", async (CampaignRequest req, IRabbitMqService mq, AppDb db) =>
+//{
+//    foreach (var email in req.Emails)
+//    {
+//        var log = new EmailLog
+//        {
+//            CampaignId = req.CampaignId,
+//            Email = email,
+//            Status = "Pending"
+//        };
+
+//        db.EmailLogs.Add(log);
+
+//        await mq.PublishAsync(new EmailMessage
+//        {
+//            To = email,
+//            CampaignId = req.CampaignId
+//        });
+//    }
+
+//    await db.SaveChangesAsync();
+
+//    return Results.Ok("Campaign queued!");
+//});
+
+// Tracking open
+//app.MapGet("/track/open", async (int id, AppDb db) =>
+//{
+//    var log = await db.EmailLogs.FindAsync(id);
+//    if (log != null)
+//    {
+//        log.Status = "Opened";
+//        await db.SaveChangesAsync();
+//    }
+
+//    return Results.Ok();
+//});
 
 app.Run();

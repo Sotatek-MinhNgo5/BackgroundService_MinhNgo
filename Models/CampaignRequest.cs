@@ -1,7 +1,7 @@
 ﻿namespace BackgroundServices.Models;
 
-public class EmailMessage
+public class CampaignRequest
 {
-    public string To { get; set; }
     public string CampaignId { get; set; }
+    public List<string> Emails { get; set; }
 }
