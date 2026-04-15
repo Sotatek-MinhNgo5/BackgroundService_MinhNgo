@@ -1,5 +1,6 @@
-﻿using BackgroundServices.Services;
-using BackgroundServices.Data;
+﻿using BackgroundServices.Data;
+using BackgroundServices.Models;
+using BackgroundServices.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 public class EmailWorker : BackgroundService
@@ -25,22 +26,47 @@ public class EmailWorker : BackgroundService
             var log = db.EmailLogs.FirstOrDefault(x =>
                 x.CampaignId == msg.CampaignId && x.Email == msg.To);
 
-            if (log == null) return;
+            if (log == null)
+            {
+                _logger.LogWarning("Email not found: {Email}", msg.To);
+                return;
+            }
 
             try
             {
-                await Task.Delay(100); // Simulate SES sending
+                await Task.Delay(100); 
 
                 log.Status = "Sent";
                 log.SentAt = DateTime.UtcNow;
 
                 await db.SaveChangesAsync();
 
-                _logger.LogInformation("Email sent successfully: {Email}", msg.To);
+                _logger.LogInformation("Sent: {Email}", msg.To);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send email: {Email}", msg.To);
+                log.RetryCount++;
+
+                if (log.RetryCount >= 3)
+                {
+                    log.Status = "Failed";
+
+                    _logger.LogError(ex, "FAILED after 3 retries: {Email}", msg.To);
+                }
+                else
+                {
+                    log.Status = "Pending";
+
+                    await _mq.PublishAsync(new EmailMessage
+                    {
+                        To = msg.To,
+                        CampaignId = msg.CampaignId
+                    });
+
+                    _logger.LogWarning("Retry {Count} for {Email}", log.RetryCount, msg.To);
+                }
+
+                await db.SaveChangesAsync();
             }
         });
 

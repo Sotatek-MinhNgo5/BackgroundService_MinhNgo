@@ -14,7 +14,7 @@ builder.Services.AddDbContext<AppDb>(opt => opt.UseSqlServer(connectionString));
 builder.Services.AddSingleton<IRabbitMqService, RabbitMqService>();
 
 // Worker
-//builder.Services.AddHostedService<EmailWorker>();
+builder.Services.AddHostedService<EmailWorker>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

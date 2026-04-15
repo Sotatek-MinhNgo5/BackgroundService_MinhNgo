@@ -54,5 +54,67 @@ namespace BackgroundServices.Controllers
                 CampaignId = campaignId
             });
         }
+
+        [HttpGet("{campaignId}/status")]
+        public IActionResult GetStatus(string campaignId, [FromServices] AppDb db)
+        {
+            var logs = db.EmailLogs.Where(x => x.CampaignId == campaignId);
+
+            var total = logs.Count();
+            var sent = logs.Count(x => x.Status == "Sent");
+            var pending = logs.Count(x => x.Status == "Pending");
+            var failed = logs.Count(x => x.Status == "Failed");
+
+            return Ok(new
+            {
+                total,
+                sent,
+                pending,
+                failed,
+                percent = total == 0 ? 0 : (sent * 100 / total)
+            });
+        }
+
+        [HttpGet("{campaignId}/emails")]
+        public IActionResult GetEmails(string campaignId, [FromServices] AppDb db)
+        {
+            var data = db.EmailLogs
+                .Where(x => x.CampaignId == campaignId)
+                .Select(x => new
+                {
+                    x.Email,
+                    x.Status,
+                    x.RetryCount,
+                    x.SentAt
+                })
+                .ToList();
+
+            return Ok(data);
+        }
+
+        [HttpPost("{campaignId}/retry")]
+        public async Task<IActionResult> Retry(string campaignId,
+        [FromServices] AppDb db)
+        {
+            var failedEmails = db.EmailLogs
+                .Where(x => x.CampaignId == campaignId && x.Status == "Failed")
+                .ToList();
+
+            foreach (var item in failedEmails)
+            {
+                item.Status = "Pending";
+                item.RetryCount = 0;
+
+                await _mqService.PublishAsync(new EmailMessage
+                {
+                    To = item.Email,
+                    CampaignId = campaignId
+                });
+            }
+
+            await db.SaveChangesAsync();
+
+            return Ok($"Retry {failedEmails.Count} emails");
+        }
     }
 }
