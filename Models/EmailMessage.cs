@@ -3,5 +3,5 @@
 public class EmailMessage
 {
     public string To { get; set; }
-    public string CampaignId { get; set; }
+    public int CampaignId { get; set; }
 }
